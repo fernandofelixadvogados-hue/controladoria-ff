@@ -1,0 +1,14 @@
+services:
+  controladoria:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - ADVBOX_API_URL=${ADVBOX_API_URL}
+      - ADVBOX_TOKEN=${ADVBOX_TOKEN}
+      - JUDIT_TOKEN=${JUDIT_TOKEN}
+      - DIGISAC_API_BASE_URL=${DIGISAC_API_BASE_URL}
+      - DIGISAC_API_TOKEN=${DIGISAC_API_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    restart: unless-stopped

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { ExternalLink, Search, ChevronDown, ChevronUp, Scale, ClipboardList, MessageCircle, Layers } from 'lucide-react'
+import { type LucideIcon, ExternalLink, Search, ChevronDown, ChevronUp, Scale, ClipboardList, MessageCircle, Layers } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ function staleBadge(days: number) {
   return           <span className="px-2 py-0.5 rounded-full text-xs bg-red-900/30 text-red-400">{days}d</span>
 }
 
-const TYPE_META: Record<FilterType, { label: string; Icon: React.FC<{ size?: number; className?: string }> }> = {
+const TYPE_META: Record<FilterType, { label: string; Icon: LucideIcon }> = {
   todos:       { label: 'Todos',                Icon: Layers },
   captura:     { label: 'Captura Processual',   Icon: Scale },
   tarefa:      { label: 'Tarefas do Escritório', Icon: ClipboardList },

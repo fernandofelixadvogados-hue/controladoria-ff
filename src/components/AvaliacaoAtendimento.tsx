@@ -199,13 +199,20 @@ export default function AvaliacaoAtendimento() {
   const [allEvals, setAllEvals] = useState<Record<string, string>>({})
   const [evaluatingAllLeads, setEvaluatingAllLeads] = useState(false)
   const [allLeadEvals, setAllLeadEvals] = useState<Record<string, string>>({})
-  const [reclassified, setReclassified] = useState<Record<string, 'cliente' | 'lead'>>(() => {
-    try { return JSON.parse(localStorage.getItem('avaliacao_reclassifications') ?? '{}') }
-    catch { return {} }
-  })
+  const [reclassified, setReclassified] = useState<Record<string, 'cliente' | 'lead'>>({})
 
+  // Load persisted reclassifications from localStorage on mount (client-only)
   useEffect(() => {
-    localStorage.setItem('avaliacao_reclassifications', JSON.stringify(reclassified))
+    try {
+      const stored = localStorage.getItem('avaliacao_reclassifications')
+      if (stored) setReclassified(JSON.parse(stored))
+    } catch {}
+  }, [])
+
+  // Persist reclassifications whenever they change
+  useEffect(() => {
+    try { localStorage.setItem('avaliacao_reclassifications', JSON.stringify(reclassified)) }
+    catch {}
   }, [reclassified])
 
   const toggleClassification = useCallback((ticketId: string, currentIsCliente: boolean) => {

@@ -21,6 +21,13 @@ function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
 }
 
+// Partial match: all significant words (>2 chars) from the query appear in the target
+function partialMatch(query: string, target: string): boolean {
+  const words = normalize(query).split(/\s+/).filter((w) => w.length > 2)
+  const normTarget = normalize(target)
+  return words.length >= 2 && words.every((w) => normTarget.includes(w))
+}
+
 export interface ClassifiedTicket {
   ticketId: string
   protocol: string | null
@@ -60,6 +67,7 @@ export async function GET(req: NextRequest) {
   // ─── 2. Build AdvBox lookup: normalizedCustomerName → { lawsuitId, step } ─
   type LookupEntry = { lawsuitId: number; step: string }
   const lookup = new Map<string, LookupEntry>()
+  const lookupEntries: Array<{ name: string; entry: LookupEntry }> = []
 
   try {
     const [lawsuits, settings] = await Promise.all([getAllLawsuits(), getSettings()])
@@ -71,6 +79,7 @@ export async function GET(req: NextRequest) {
       for (const c of lw.customers) {
         if (c.name) {
           lookup.set(normalize(c.name), { lawsuitId: lw.id, step })
+          lookupEntries.push({ name: c.name, entry: { lawsuitId: lw.id, step } })
         }
       }
     }
@@ -86,10 +95,13 @@ export async function GET(req: NextRequest) {
     // internalName is the full name; name may be a nickname/first name only
     const contactName = contact?.internalName ?? contact?.name ?? t.contactId
 
-    // Try matching by internalName first, then by name
+    // Try matching by internalName first, then by name, then by partial match
     const key = normalize(contactName)
     const keyAlt = contact?.name ? normalize(contact.name) : null
-    const advEntry = lookup.get(key) ?? (keyAlt ? lookup.get(keyAlt) : undefined)
+    const advEntry =
+      lookup.get(key) ??
+      (keyAlt ? lookup.get(keyAlt) : undefined) ??
+      lookupEntries.find((e) => partialMatch(contactName, e.name) || (keyAlt && partialMatch(keyAlt, e.name)))?.entry
 
     let classification: ClassifiedTicket['classification'] = 'nao_identificado'
     let lawsuitId: number | null = null

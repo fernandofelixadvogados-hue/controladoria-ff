@@ -370,7 +370,7 @@ export default function AvaliacaoAtendimento() {
 
           {data.clientes.length === 0 && data.leads.length === 0 && (
             <div className="text-center py-12 text-gray-500 text-sm">
-              Nenhum atendimento encontrado para {selected} em {date}
+              Nenhum atendimento encontrado para {selected} em {dateFrom}{dateTo !== dateFrom ? ` – ${dateTo}` : ''}
             </div>
           )}
 

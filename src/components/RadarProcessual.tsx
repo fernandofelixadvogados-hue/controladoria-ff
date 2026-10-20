@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { type LucideIcon, ExternalLink, Search, ChevronDown, ChevronUp, Scale, ClipboardList, MessageCircle, Layers } from 'lucide-react'
+import { type LucideIcon, ExternalLink, Search, ChevronDown, ChevronUp, Scale, ClipboardList, MessageCircle, Layers, Slack, MessageSquare } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ interface HistoricoData {
   errors?: Record<string, string>
 }
 
-type FilterType = 'todos' | 'captura' | 'tarefa' | 'comunicacao'
+type FilterType = 'todos' | 'captura' | 'tarefa' | 'comunicacao_slack' | 'comunicacao_digisac'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,10 +60,11 @@ function staleBadge(days: number) {
 }
 
 const TYPE_META: Record<FilterType, { label: string; Icon: LucideIcon }> = {
-  todos:       { label: 'Todos',                Icon: Layers },
-  captura:     { label: 'Captura Processual',   Icon: Scale },
-  tarefa:      { label: 'Tarefas do Escritório', Icon: ClipboardList },
-  comunicacao: { label: 'Comunicação',          Icon: MessageCircle },
+  todos:                { label: 'Todos',                    Icon: Layers },
+  captura:              { label: 'Captura Processual',       Icon: Scale },
+  tarefa:               { label: 'Tarefas AdvBox',           Icon: ClipboardList },
+  comunicacao_slack:    { label: 'Comunicação Interna',      Icon: Slack },
+  comunicacao_digisac:  { label: 'Comunicação com Cliente',  Icon: MessageSquare },
 }
 
 const SOURCE_BADGE: Record<string, string> = {
@@ -72,10 +73,11 @@ const SOURCE_BADGE: Record<string, string> = {
 }
 
 const TYPE_BADGE: Record<FilterType, string> = {
-  todos:       '',
-  captura:     'bg-blue-900/30 text-blue-400',
-  tarefa:      'bg-amber-900/30 text-amber-400',
-  comunicacao: 'bg-teal-900/30 text-teal-400',
+  todos:                '',
+  captura:              'bg-blue-900/30 text-blue-400',
+  tarefa:               'bg-amber-900/30 text-amber-400',
+  comunicacao_slack:    'bg-purple-900/30 text-purple-400',
+  comunicacao_digisac:  'bg-teal-900/30 text-teal-400',
 }
 
 // ── Historico Panel ────────────────────────────────────────────────────────
@@ -104,9 +106,14 @@ function HistoricoPanel({
       .finally(() => setLoading(false))
   }, [item.request_id, item.lawsuit_id, item.contact_name])
 
-  const filtered = data?.items.filter(
-    (i) => filter === 'todos' || i.type === filter
-  ) ?? []
+  function matchesFilter(i: HistoricoItem, f: FilterType): boolean {
+    if (f === 'todos') return true
+    if (f === 'comunicacao_slack')   return i.type === 'comunicacao' && i.metadata?.source === 'slack'
+    if (f === 'comunicacao_digisac') return i.type === 'comunicacao' && i.metadata?.source === 'digisac'
+    return i.type === f
+  }
+
+  const filtered = data?.items.filter((i) => matchesFilter(i, filter)) ?? []
 
   return (
     <div className="bg-gray-950 border-t border-gray-800 px-4 py-4">
@@ -116,7 +123,7 @@ function HistoricoPanel({
           const { label, Icon } = TYPE_META[t]
           const count = t === 'todos'
             ? (data?.items.length ?? 0)
-            : (data?.items.filter((i) => i.type === t).length ?? 0)
+            : (data?.items.filter((i) => matchesFilter(i, t)).length ?? 0)
           return (
             <button
               key={t}
@@ -163,9 +170,19 @@ function HistoricoPanel({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   {/* Type badge */}
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${TYPE_BADGE[entry.type]}`}>
-                    {entry.type === 'captura' ? 'Captura' : entry.type === 'tarefa' ? 'Tarefa' : 'Comunicação'}
-                  </span>
+                  {entry.type === 'comunicacao' ? (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                      entry.metadata?.source === 'slack' ? TYPE_BADGE.comunicacao_slack : TYPE_BADGE.comunicacao_digisac
+                    }`}>
+                      {entry.metadata?.source === 'slack' ? 'Slack' : 'Digisac'}
+                    </span>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                      entry.type === 'captura' ? TYPE_BADGE.captura : TYPE_BADGE.tarefa
+                    }`}>
+                      {entry.type === 'captura' ? 'Captura' : 'Tarefa'}
+                    </span>
+                  )}
 
                   {/* Source badge for comunicacao */}
                   {entry.metadata?.source && (

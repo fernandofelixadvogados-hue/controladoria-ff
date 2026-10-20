@@ -17,6 +17,7 @@ export interface DigisacMessage {
   createdAt: string
   userId?: string | null
   contactId?: string | null
+  ticketId?: string | null
   contact?: { id: string; name: string | null }
 }
 
@@ -168,6 +169,18 @@ export async function getContactById(contactId: string): Promise<DigisacContact 
   try {
     const res = await digisacGet<{ data: DigisacContact[] }>('contacts', {
       'where[id][$eq]': contactId,
+      perPage: 1,
+    })
+    return res.data?.[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function getTicketById(id: string): Promise<DigisacTicket | null> {
+  try {
+    const res = await digisacGet<TicketListResponse>('tickets', {
+      'where[id][$eq]': id,
       perPage: 1,
     })
     return res.data?.[0] ?? null

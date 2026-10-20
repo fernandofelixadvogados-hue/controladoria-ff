@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Users, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Sparkles, UserCheck, UserX, Search, ArrowLeftRight,
+  Loader2, AlertCircle, Sparkles, UserCheck, UserX, ArrowLeftRight,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -199,21 +199,28 @@ export default function AvaliacaoAtendimento() {
   const [allEvals, setAllEvals] = useState<Record<string, string>>({})
   const [evaluatingAllLeads, setEvaluatingAllLeads] = useState(false)
   const [allLeadEvals, setAllLeadEvals] = useState<Record<string, string>>({})
-  const [reclassified, setReclassified] = useState<Record<string, 'cliente' | 'lead'>>({})
+  const [reclassified, setReclassified] = useState<Record<string, 'cliente' | 'lead'>>(() => {
+    try { return JSON.parse(localStorage.getItem('avaliacao_reclassifications') ?? '{}') }
+    catch { return {} }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('avaliacao_reclassifications', JSON.stringify(reclassified))
+  }, [reclassified])
 
   const toggleClassification = useCallback((ticketId: string, currentIsCliente: boolean) => {
     setReclassified(prev => ({ ...prev, [ticketId]: currentIsCliente ? 'lead' : 'cliente' }))
   }, [])
 
-  const buscar = useCallback(async () => {
+  const buscar = useCallback(async (nameOverride?: string) => {
+    const collaborator = nameOverride ?? selected
     setLoading(true)
     setError(null)
     setData(null)
     setAllEvals({})
     setAllLeadEvals({})
-    setReclassified({})
     try {
-      if (selected === 'Todos') {
+      if (collaborator === 'Todos') {
         const responses = await Promise.all(
           COLABORADORES_INDIVIDUAIS.map(col =>
             fetch(`/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(col.name)}`)
@@ -231,7 +238,7 @@ export default function AvaliacaoAtendimento() {
         })
       } else {
         const res = await fetch(
-          `/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(selected)}`
+          `/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(collaborator)}`
         )
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -336,29 +343,24 @@ export default function AvaliacaoAtendimento() {
           {COLABORADORES.map((col) => (
             <button
               key={col.name}
-              onClick={() => setSelected(col.name)}
+              onClick={() => { setSelected(col.name); buscar(col.name) }}
+              disabled={loading}
               title={col.name}
               className={clsx(
-                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50',
                 selected === col.name
                   ? 'bg-brand-500 text-white'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/60'
               )}
             >
-              {col.initials}
+              {loading && selected === col.name
+                ? <Loader2 size={13} className="animate-spin inline" />
+                : col.initials
+              }
               <span className="hidden sm:inline ml-1.5">{col.name.split(' ')[0]}</span>
             </button>
           ))}
         </div>
-
-        <button
-          onClick={buscar}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-          Buscar atendimentos
-        </button>
       </div>
 
       {/* Error */}

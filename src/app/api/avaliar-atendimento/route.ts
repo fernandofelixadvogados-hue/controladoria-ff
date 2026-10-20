@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getTicketsForDate, getTicketsForDateRange, getContactById } from '@/lib/digisac'
+import { getTicketsForDate, getTicketsForDateRange, getContactById, getMessagesByAgent, getTicketById } from '@/lib/digisac'
 import { getAllLawsuits, getSettings } from '@/lib/advbox'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +55,8 @@ export async function GET(req: NextRequest) {
   const errors: string[] = []
 
   // ─── 1. Fetch tickets for the period ──────────────────────────────────────
+  // Strategy: fetch tickets directly assigned to the agent (userId) PLUS tickets
+  // where the agent sent messages (covers cases assigned to departments/queues).
   let tickets: Awaited<ReturnType<typeof getTicketsForDate>> = []
   try {
     tickets = dateFrom === dateTo
@@ -62,6 +64,33 @@ export async function GET(req: NextRequest) {
       : await getTicketsForDateRange(dateFrom, dateTo, digisacUserId)
   } catch (e) {
     errors.push(`Digisac tickets: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // ─── 1b. Supplement: also find tickets where the agent sent messages ──────
+  // This covers tickets assigned to departments/queues rather than the agent directly.
+  try {
+    const messages = await getMessagesByAgent(digisacUserId, dateFrom, dateTo)
+    const knownIds = new Set(tickets.map((t) => t.id))
+    const seenExtra = new Set<string>()
+    const extraIds: string[] = []
+    for (const m of messages) {
+      if (m.ticketId && !knownIds.has(m.ticketId) && !seenExtra.has(m.ticketId)) {
+        seenExtra.add(m.ticketId)
+        extraIds.push(m.ticketId)
+      }
+    }
+    if (extraIds.length > 0) {
+      const dayStart = new Date(`${dateFrom}T00:00:00-03:00`).toISOString()
+      const dayEnd   = new Date(`${dateTo}T23:59:59-03:00`).toISOString()
+      const extra = await Promise.all(extraIds.map((id) => getTicketById(id)))
+      for (const t of extra) {
+        if (t && t.startedAt >= dayStart && t.startedAt <= dayEnd) {
+          tickets.push(t)
+        }
+      }
+    }
+  } catch (e) {
+    errors.push(`Digisac messages supplement: ${e instanceof Error ? e.message : String(e)}`)
   }
 
   // ─── 2. Build AdvBox lookup: normalizedCustomerName → { lawsuitId, step } ─

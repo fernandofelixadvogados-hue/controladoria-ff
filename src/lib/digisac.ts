@@ -58,10 +58,10 @@ export async function listUsers(): Promise<DigisacUser[]> {
   return res.data ?? []
 }
 
-export async function getMessagesByAgent(userId: string, date: string): Promise<DigisacMessage[]> {
+export async function getMessagesByAgent(userId: string, dateFrom: string, dateTo?: string): Promise<DigisacMessage[]> {
   // Brazil is UTC-3; convert local date to UTC range
-  const dateStart = new Date(`${date}T00:00:00-03:00`).toISOString()
-  const dateEnd = new Date(`${date}T23:59:59-03:00`).toISOString()
+  const dateStart = new Date(`${dateFrom}T00:00:00-03:00`).toISOString()
+  const dateEnd = new Date(`${dateTo ?? dateFrom}T23:59:59-03:00`).toISOString()
   const all: DigisacMessage[] = []
   let page = 1
   while (true) {
@@ -139,6 +139,29 @@ export async function getTicketsForDate(date: string, userId: string): Promise<D
   }
 
   return result
+}
+
+export async function getTicketsForDateRange(dateFrom: string, dateTo: string, userId: string): Promise<DigisacTicket[]> {
+  // Generate list of dates in range (max 14 days)
+  const dates: string[] = []
+  const cur = new Date(`${dateFrom}T12:00:00-03:00`)
+  const end = new Date(`${dateTo}T12:00:00-03:00`)
+  while (cur <= end && dates.length < 14) {
+    dates.push(cur.toISOString().slice(0, 10))
+    cur.setDate(cur.getDate() + 1)
+  }
+  const all: DigisacTicket[] = []
+  const seen = new Set<string>()
+  for (const d of dates) {
+    const tickets = await getTicketsForDate(d, userId)
+    for (const t of tickets) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id)
+        all.push(t)
+      }
+    }
+  }
+  return all
 }
 
 export async function getContactById(contactId: string): Promise<DigisacContact | null> {

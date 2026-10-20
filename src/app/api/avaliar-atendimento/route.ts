@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getTicketsForDate, getContactById } from '@/lib/digisac'
+import { getTicketsForDate, getTicketsForDateRange, getContactById } from '@/lib/digisac'
 import { getAllLawsuits, getSettings } from '@/lib/advbox'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +35,9 @@ export interface ClassifiedTicket {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const date = searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
+  const today = new Date().toISOString().slice(0, 10)
+  const dateFrom = searchParams.get('dateFrom') ?? searchParams.get('date') ?? today
+  const dateTo   = searchParams.get('dateTo')   ?? dateFrom
   const collaborator = searchParams.get('collaborator') ?? ''
 
   const digisacUserId = DIGISAC_USER_IDS[collaborator]
@@ -45,10 +47,12 @@ export async function GET(req: NextRequest) {
 
   const errors: string[] = []
 
-  // ─── 1. Fetch tickets for the day ─────────────────────────────────────────
+  // ─── 1. Fetch tickets for the period ──────────────────────────────────────
   let tickets: Awaited<ReturnType<typeof getTicketsForDate>> = []
   try {
-    tickets = await getTicketsForDate(date, digisacUserId)
+    tickets = dateFrom === dateTo
+      ? await getTicketsForDate(dateFrom, digisacUserId)
+      : await getTicketsForDateRange(dateFrom, dateTo, digisacUserId)
   } catch (e) {
     errors.push(`Digisac tickets: ${e instanceof Error ? e.message : String(e)}`)
   }
@@ -118,7 +122,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     collaborator,
-    date,
+    dateFrom,
+    dateTo,
     clientes,
     leads,
     errors: errors.length > 0 ? errors : undefined,

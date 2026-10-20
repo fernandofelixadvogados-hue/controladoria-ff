@@ -157,7 +157,12 @@ export async function getLawsuitMovements(lawsuit_id: number): Promise<AdvboxMov
 }
 
 export async function getTasksForDate(date: string): Promise<AdvboxTask[]> {
-  const cached = tasksDateCache.get(date)
+  return getTasksForDateRange(date, date)
+}
+
+export async function getTasksForDateRange(dateFrom: string, dateTo: string): Promise<AdvboxTask[]> {
+  const cacheKey = `${dateFrom}__${dateTo}`
+  const cached = tasksDateCache.get(cacheKey)
   if (cached && Date.now() - cached.at < TASKS_DATE_TTL) {
     return cached.data
   }
@@ -165,12 +170,12 @@ export async function getTasksForDate(date: string): Promise<AdvboxTask[]> {
   let offset = 0
   const limit = 100
   while (true) {
-    const res = await request<ListResponse<AdvboxTask>>('posts', { date_start: date, date_end: date, limit, offset })
+    const res = await request<ListResponse<AdvboxTask>>('posts', { date_start: dateFrom, date_end: dateTo, limit, offset })
     all.push(...res.data)
     if (all.length >= res.totalCount || res.data.length === 0) break
     offset += limit
     if (offset > 0) await sleep(350)
   }
-  tasksDateCache.set(date, { data: all, at: Date.now() })
+  tasksDateCache.set(cacheKey, { data: all, at: Date.now() })
   return all
 }

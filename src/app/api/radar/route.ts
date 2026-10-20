@@ -26,9 +26,11 @@ export async function GET() {
         .map((l) => [l.process_number!, l])
     )
 
-    // Apenas trackings ativos por CNJ
+    // Trackings ativos por CNJ (inclui 'updating' e 'created' além de 'updated')
     const active = trackings.filter(
-      (t) => t.status === 'updated' && t.search.search_type === 'lawsuit_cnj'
+      (t) =>
+        ['updated', 'updating', 'created'].includes(t.status) &&
+        t.search.search_type === 'lawsuit_cnj'
     )
 
     const results = active.map((t) => {

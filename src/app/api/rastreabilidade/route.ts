@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getSettings, getTasksForDate } from '@/lib/advbox'
+import { getSettings, getTasksForDateRange } from '@/lib/advbox'
 import { listUsers, getMessagesByAgent } from '@/lib/digisac'
 import { listCaseChannels, getChannelMessagesInRange } from '@/lib/slack'
 
@@ -19,7 +19,9 @@ const SLACK_IDS: Record<string, string> = {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const date = searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
+  const today = new Date().toISOString().slice(0, 10)
+  const dateFrom = searchParams.get('dateFrom') ?? searchParams.get('date') ?? today
+  const dateTo   = searchParams.get('dateTo')   ?? dateFrom
   const name = searchParams.get('name') ?? ''
 
   const errors: string[] = []
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
     advbox.advbox_user_id = uid
 
     await sleep(400)
-    const allTasks = await getTasksForDate(date)
+    const allTasks = await getTasksForDateRange(dateFrom, dateTo)
 
     if (uid !== null) {
       advbox.para = allTasks.filter((t) =>
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
 
     if (digUserId) {
       await sleep(200)
-      const messages = await getMessagesByAgent(digUserId, date)
+      const messages = await getMessagesByAgent(digUserId, dateFrom, dateTo)
       const byContact = new Map<string, DigiContact>()
       for (const msg of messages) {
         const cid = msg.contactId ?? 'unknown'
@@ -110,10 +112,10 @@ export async function GET(req: NextRequest) {
   try {
     const slackUserId = SLACK_IDS[name]
     if (slackUserId) {
-      const dayStartSec = new Date(`${date}T00:00:00-03:00`).getTime() / 1000
-      const dayEndSec = new Date(`${date}T23:59:59-03:00`).getTime() / 1000
+      const dayStartSec = new Date(`${dateFrom}T00:00:00-03:00`).getTime() / 1000
+      const dayEndSec = new Date(`${dateTo}T23:59:59-03:00`).getTime() / 1000
 
-      const channels = await listCaseChannels(date)
+      const channels = await listCaseChannels(dateFrom)
       const results: SlackCh[] = []
 
       for (const ch of channels) {
@@ -140,7 +142,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     collaborator: name,
-    date,
+    dateFrom,
+    dateTo,
     advbox,
     digisac,
     slack,

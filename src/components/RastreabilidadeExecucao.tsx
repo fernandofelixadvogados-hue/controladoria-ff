@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Users, BookOpen, MessageSquare, Slack, ChevronDown, ChevronRight, Loader2, AlertCircle } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { Users, BookOpen, MessageSquare, Slack, ChevronDown, ChevronRight, Loader2, AlertCircle, Search } from 'lucide-react'
 import clsx from 'clsx'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,7 +51,8 @@ interface SlackData {
 
 interface RastreabilidadeData {
   collaborator: string
-  date: string
+  dateFrom: string
+  dateTo: string
   advbox: AdvboxData
   digisac: DigisacData
   slack: SlackData
@@ -146,7 +147,8 @@ function Section({
 
 export default function RastreabilidadeExecucao() {
   const today = new Date().toISOString().slice(0, 10)
-  const [date, setDate] = useState(today)
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
   const [selected, setSelected] = useState(COLABORADORES[0].name)
   const [data, setData] = useState<RastreabilidadeData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -158,7 +160,7 @@ export default function RastreabilidadeExecucao() {
     setData(null)
     try {
       const res = await fetch(
-        `/api/rastreabilidade?date=${date}&name=${encodeURIComponent(selected)}`
+        `/api/rastreabilidade?dateFrom=${dateFrom}&dateTo=${dateTo}&name=${encodeURIComponent(selected)}`
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setData(await res.json())
@@ -167,11 +169,7 @@ export default function RastreabilidadeExecucao() {
     } finally {
       setLoading(false)
     }
-  }, [date, selected])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  }, [dateFrom, dateTo, selected])
 
   const adv = data?.advbox
   const digi = data?.digisac
@@ -181,13 +179,21 @@ export default function RastreabilidadeExecucao() {
     <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* Date picker */}
+        {/* Date range picker */}
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 whitespace-nowrap">Data</label>
+          <label className="text-xs text-gray-500 whitespace-nowrap">De</label>
           <input
             type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          />
+          <label className="text-xs text-gray-500 whitespace-nowrap">Até</label>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom}
+            onChange={(e) => setDateTo(e.target.value)}
             className="bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
         </div>
@@ -212,6 +218,15 @@ export default function RastreabilidadeExecucao() {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+          Buscar
+        </button>
       </div>
 
       {/* Loading */}
@@ -219,6 +234,12 @@ export default function RastreabilidadeExecucao() {
         <div className="flex items-center gap-3 text-gray-400 py-10 justify-center">
           <Loader2 size={18} className="animate-spin" />
           <span className="text-sm">Carregando rastreabilidade de {selected}…</span>
+        </div>
+      )}
+
+      {!loading && !data && !error && (
+        <div className="text-center py-12 text-gray-600 text-sm">
+          Selecione o período e o colaborador, depois clique em Buscar.
         </div>
       )}
 

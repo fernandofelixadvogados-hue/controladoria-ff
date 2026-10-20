@@ -51,15 +51,19 @@ function TicketCard({
   ticket,
   collaboratorName,
   isCliente,
+  externalEvaluation,
 }: {
   ticket: ClassifiedTicket
   collaboratorName: string
   isCliente: boolean
+  externalEvaluation?: string
 }) {
   const [open, setOpen] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
   const [evaluation, setEvaluation] = useState<string | null>(null)
   const [evalError, setEvalError] = useState<string | null>(null)
+
+  const activeEval = externalEvaluation ?? evaluation
 
   const evaluate = useCallback(async () => {
     setEvaluating(true)
@@ -72,6 +76,7 @@ function TicketCard({
           ticketId: ticket.ticketId,
           contactName: ticket.contactName,
           collaboratorName,
+          type: isCliente ? 'cliente' : 'lead',
         }),
       })
       const json = await res.json()
@@ -83,7 +88,7 @@ function TicketCard({
     } finally {
       setEvaluating(false)
     }
-  }, [ticket, collaboratorName])
+  }, [ticket, collaboratorName, isCliente])
 
   return (
     <div className="rounded-lg border border-gray-800 overflow-hidden">
@@ -103,9 +108,8 @@ function TicketCard({
           </p>
         </div>
 
-        {isCliente && (
-          <button
-            onClick={evaluation ? () => setOpen((o) => !o) : evaluate}
+        <button
+            onClick={activeEval ? () => setOpen((o) => !o) : evaluate}
             disabled={evaluating}
             className={clsx(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors shrink-0',
@@ -116,13 +120,12 @@ function TicketCard({
           >
             {evaluating ? (
               <><Loader2 size={11} className="animate-spin" /> Avaliando…</>
-            ) : evaluation ? (
+            ) : activeEval ? (
               <>{open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Ver avaliação</>
             ) : (
               <><Sparkles size={11} /> Avaliar</>
             )}
           </button>
-        )}
       </div>
 
       {/* Evaluation */}
@@ -132,10 +135,10 @@ function TicketCard({
           {evalError}
         </div>
       )}
-      {evaluation && open && (
+      {activeEval && open && (
         <div className="px-4 py-3 bg-gray-950/60 border-t border-gray-800">
           <div className="prose prose-invert prose-sm max-w-none text-xs leading-relaxed text-gray-300">
-            {evaluation.split('\n').map((line, i) => {
+            {activeEval.split('\n').map((line, i) => {
               if (line.startsWith('## ') || line.startsWith('**')) {
                 return (
                   <p key={i} className="font-semibold text-gray-200 mt-2 mb-1">
@@ -167,22 +170,26 @@ function TicketCard({
 
 export default function AvaliacaoAtendimento() {
   const today = new Date().toISOString().slice(0, 10)
-  const [date, setDate] = useState(today)
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
   const [selected, setSelected] = useState(COLABORADORES[0].name)
   const [data, setData] = useState<AvaliacaoData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [evaluatingAll, setEvaluatingAll] = useState(false)
   const [allEvals, setAllEvals] = useState<Record<string, string>>({})
+  const [evaluatingAllLeads, setEvaluatingAllLeads] = useState(false)
+  const [allLeadEvals, setAllLeadEvals] = useState<Record<string, string>>({})
 
   const buscar = useCallback(async () => {
     setLoading(true)
     setError(null)
     setData(null)
     setAllEvals({})
+    setAllLeadEvals({})
     try {
       const res = await fetch(
-        `/api/avaliar-atendimento?date=${date}&collaborator=${encodeURIComponent(selected)}`
+        `/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(selected)}`
       )
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -194,7 +201,7 @@ export default function AvaliacaoAtendimento() {
     } finally {
       setLoading(false)
     }
-  }, [date, selected])
+  }, [dateFrom, dateTo, selected])
 
   const avaliarTodos = useCallback(async () => {
     if (!data?.clientes.length) return
@@ -221,16 +228,50 @@ export default function AvaliacaoAtendimento() {
     setEvaluatingAll(false)
   }, [data, selected])
 
+  const avaliarTodosLeads = useCallback(async () => {
+    if (!data?.leads.length) return
+    setEvaluatingAllLeads(true)
+    const results: Record<string, string> = {}
+    for (const t of data.leads) {
+      try {
+        const res = await fetch('/api/avaliar-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticketId: t.ticketId,
+            contactName: t.contactName,
+            collaboratorName: selected,
+            type: 'lead',
+          }),
+        })
+        const json = await res.json()
+        results[t.ticketId] = json.evaluation ?? json.error ?? 'Sem resposta'
+      } catch (e) {
+        results[t.ticketId] = `Erro: ${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+    setAllLeadEvals(results)
+    setEvaluatingAllLeads(false)
+  }, [data, selected])
+
   return (
     <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 whitespace-nowrap">Data</label>
+          <label className="text-xs text-gray-500 whitespace-nowrap">De</label>
           <input
             type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          />
+          <label className="text-xs text-gray-500 whitespace-nowrap">Até</label>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom}
+            onChange={(e) => setDateTo(e.target.value)}
             className="bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
         </div>
@@ -304,8 +345,23 @@ export default function AvaliacaoAtendimento() {
                   className="flex items-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium transition-colors disabled:opacity-50"
                 >
                   {evaluatingAll
-                    ? <><Loader2 size={13} className="animate-spin" /> Avaliando todos…</>
+                    ? <><Loader2 size={13} className="animate-spin" /> Avaliando clientes…</>
                     : <><Sparkles size={13} /> Avaliar todos os clientes</>
+                  }
+                </button>
+              </>
+            )}
+            {data.leads.length > 1 && (
+              <>
+                <span className="text-gray-600">·</span>
+                <button
+                  onClick={avaliarTodosLeads}
+                  disabled={evaluatingAllLeads}
+                  className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-medium transition-colors disabled:opacity-50"
+                >
+                  {evaluatingAllLeads
+                    ? <><Loader2 size={13} className="animate-spin" /> Avaliando leads…</>
+                    : <><Sparkles size={13} /> Avaliar todos os leads</>
                   }
                 </button>
               </>
@@ -329,12 +385,10 @@ export default function AvaliacaoAtendimento() {
                 {data.clientes.map((t) => (
                   <TicketCard
                     key={t.ticketId}
-                    ticket={allEvals[t.ticketId]
-                      ? { ...t }
-                      : t
-                    }
+                    ticket={t}
                     collaboratorName={selected}
                     isCliente
+                    externalEvaluation={allEvals[t.ticketId]}
                   />
                 ))}
               </div>
@@ -366,7 +420,7 @@ export default function AvaliacaoAtendimento() {
             <div className="space-y-3">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                 <UserX size={12} className="text-amber-400" />
-                Leads ({data.leads.length}) — listados sem avaliação detalhada
+                Leads ({data.leads.length}) — avaliação pelo script da Geovana
               </h3>
               <div className="space-y-2">
                 {data.leads.map((t) => (
@@ -375,9 +429,29 @@ export default function AvaliacaoAtendimento() {
                     ticket={t}
                     collaboratorName={selected}
                     isCliente={false}
+                    externalEvaluation={allLeadEvals[t.ticketId]}
                   />
                 ))}
               </div>
+              {Object.keys(allLeadEvals).length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {data.leads.map((t) =>
+                    allLeadEvals[t.ticketId] ? (
+                      <div key={t.ticketId} className="rounded-lg border border-amber-700/30 bg-gray-950/60 overflow-hidden">
+                        <div className="px-4 py-2 bg-gray-900/60 flex items-center gap-2">
+                          <Sparkles size={12} className="text-amber-400" />
+                          <span className="text-xs font-medium text-gray-300">
+                            Avaliação — {t.contactName}
+                          </span>
+                        </div>
+                        <div className="px-4 py-3 text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          {allLeadEvals[t.ticketId]}
+                        </div>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

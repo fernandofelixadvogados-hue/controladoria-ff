@@ -30,10 +30,11 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { ticketId, contactName, collaboratorName } = body as {
+  const { ticketId, contactName, collaboratorName, type = 'cliente' } = body as {
     ticketId: string
     contactName: string
     collaboratorName: string
+    type?: 'cliente' | 'lead'
   }
 
   if (!ticketId || !collaboratorName) {
@@ -75,7 +76,33 @@ export async function POST(req: NextRequest) {
   // Call Claude for evaluation
   const anthropic = new Anthropic({ apiKey })
 
-  const prompt = `Você é um avaliador especializado em qualidade de atendimento jurídico.
+  const prompt = type === 'lead'
+    ? `Você é um avaliador especializado em atendimento comercial-jurídico.
+
+Avalie o atendimento abaixo prestado por **${collaboratorName}** a um **lead** (${contactName ?? 'contato'}) no WhatsApp. O atendente deve seguir o script da assistente virtual "Geovana" do escritório Fernando Felix Advogados.
+
+**Script obrigatório — critérios a verificar:**
+
+1. **Abertura** — usou a mensagem de boas-vindas padrão ou adaptação adequada?
+2. **Fluxo em 6 fases** — seguiu a sequência: Abertura → Compreensão → Validação → Urgência → Triagem → Execução do caminho (A/B/C)?
+3. **Tom e linguagem** — acolhedor, caloroso, humano, sem juridiquês, sem negrito/asteriscos, sem dizer que é IA?
+4. **Cadência** — respeitou o ritmo (uma mensagem por interação, uma pergunta por vez)?
+5. **Triagem correta** — identificou se o caso é Caminho A (consulta), B (proposta direta) ou C (encerramento)? Aplicou a lógica corretamente?
+6. **Apresentação da consulta (Caminho A)** — apresentou valor com contexto acolhedor, mencionou que o valor é abatido dos honorários, informou formas de pagamento? Nunca apresentou preço seco?
+7. **Dados coletados** — pediu APENAS o nome completo? Nunca pediu CPF, e-mail, telefone antes do agendamento?
+8. **Comportamentos proibidos** — prometeu resultado, inventou fatos, discutiu mérito jurídico profundamente, fez pressão emocional, fez follow-up sem ser perguntado?
+9. **Conversão** — conduziu o lead a um próximo passo concreto (agendamento, proposta ou encerramento positivo)?
+
+**Transcrição do atendimento:**
+${transcript}
+
+**Instruções:**
+- Avaliação qualitativa em texto (sem notas numéricas)
+- Formato: Resumo do atendimento · Fases cumpridas · Desvios do script · Pontos de melhoria · Conclusão
+- Seja direto e específico, citando trechos reais quando relevante
+- Se seguiu o script corretamente, diga isso claramente. Se desviou, aponte exatamente onde e o que deveria ter feito.
+- Máximo 300 palavras`
+    : `Você é um avaliador especializado em qualidade de atendimento jurídico.
 
 Avalie o atendimento abaixo prestado por **${collaboratorName}** a **${contactName ?? 'Cliente'}** no WhatsApp (via Digisac). Este é um atendimento a um **cliente** (já contratou o escritório, não é lead).
 

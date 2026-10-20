@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from 'react'
 import {
-  Users, MessageSquare, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Sparkles, UserCheck, UserX, Search,
+  Users, ChevronDown, ChevronRight,
+  Loader2, AlertCircle, Sparkles, UserCheck, UserX, Search, ArrowLeftRight,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -19,6 +19,7 @@ interface ClassifiedTicket {
   classification: 'cliente' | 'lead' | 'nao_identificado'
   lawsuitId: number | null
   step: string | null
+  _collaborator?: string
 }
 
 interface AvaliacaoData {
@@ -32,12 +33,15 @@ interface AvaliacaoData {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const COLABORADORES = [
+  { name: 'Todos',         initials: 'TD' },
   { name: 'Ana Carolina',  initials: 'AC' },
   { name: 'Pedro Lucas',   initials: 'PL' },
   { name: 'Yasmim Rocha',  initials: 'YR' },
   { name: 'Karla Freitas', initials: 'KF' },
   { name: 'Fernando Felix',initials: 'FF' },
 ]
+
+const COLABORADORES_INDIVIDUAIS = COLABORADORES.filter(c => c.name !== 'Todos')
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('pt-BR', {
@@ -52,11 +56,15 @@ function TicketCard({
   collaboratorName,
   isCliente,
   externalEvaluation,
+  onToggleClassification,
+  showCollaborator,
 }: {
   ticket: ClassifiedTicket
   collaboratorName: string
   isCliente: boolean
   externalEvaluation?: string
+  onToggleClassification?: () => void
+  showCollaborator?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
@@ -105,8 +113,19 @@ function TicketCard({
             {fmtTime(ticket.startedAt)}
             {ticket.protocol && ` · #${ticket.protocol}`}
             {ticket.step && ` · ${ticket.step}`}
+            {showCollaborator && ticket._collaborator && ` · ${ticket._collaborator.split(' ')[0]}`}
           </p>
         </div>
+
+        {onToggleClassification && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleClassification() }}
+            title={isCliente ? 'Mover para Leads' : 'Mover para Clientes'}
+            className="text-gray-600 hover:text-gray-400 transition-colors shrink-0 mr-1"
+          >
+            <ArrowLeftRight size={12} />
+          </button>
+        )}
 
         <button
             onClick={activeEval ? () => setOpen((o) => !o) : evaluate}
@@ -180,6 +199,11 @@ export default function AvaliacaoAtendimento() {
   const [allEvals, setAllEvals] = useState<Record<string, string>>({})
   const [evaluatingAllLeads, setEvaluatingAllLeads] = useState(false)
   const [allLeadEvals, setAllLeadEvals] = useState<Record<string, string>>({})
+  const [reclassified, setReclassified] = useState<Record<string, 'cliente' | 'lead'>>({})
+
+  const toggleClassification = useCallback((ticketId: string, currentIsCliente: boolean) => {
+    setReclassified(prev => ({ ...prev, [ticketId]: currentIsCliente ? 'lead' : 'cliente' }))
+  }, [])
 
   const buscar = useCallback(async () => {
     setLoading(true)
@@ -187,15 +211,34 @@ export default function AvaliacaoAtendimento() {
     setData(null)
     setAllEvals({})
     setAllLeadEvals({})
+    setReclassified({})
     try {
-      const res = await fetch(
-        `/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(selected)}`
-      )
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error ?? `HTTP ${res.status}`)
+      if (selected === 'Todos') {
+        const responses = await Promise.all(
+          COLABORADORES_INDIVIDUAIS.map(col =>
+            fetch(`/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(col.name)}`)
+              .then(r => r.json())
+              .then(json => ({ ...json, _col: col.name }))
+              .catch((e: unknown) => ({ clientes: [], leads: [], errors: [String(e)], _col: col.name }))
+          )
+        )
+        setData({
+          collaborator: 'Todos',
+          date: dateFrom,
+          clientes: responses.flatMap(r => (r.clientes ?? []).map((t: ClassifiedTicket) => ({ ...t, _collaborator: r._col }))),
+          leads:    responses.flatMap(r => (r.leads    ?? []).map((t: ClassifiedTicket) => ({ ...t, _collaborator: r._col }))),
+          errors:   responses.flatMap(r => r.errors ?? []).filter(Boolean),
+        })
+      } else {
+        const res = await fetch(
+          `/api/avaliar-atendimento?dateFrom=${dateFrom}&dateTo=${dateTo}&collaborator=${encodeURIComponent(selected)}`
+        )
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error ?? `HTTP ${res.status}`)
+        }
+        setData(await res.json())
       }
-      setData(await res.json())
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -203,11 +246,21 @@ export default function AvaliacaoAtendimento() {
     }
   }, [dateFrom, dateTo, selected])
 
+  const allTickets = data ? [...data.clientes, ...data.leads] : []
+  const effectiveClientes = allTickets.filter(t => {
+    const ov = reclassified[t.ticketId]
+    return ov ? ov === 'cliente' : t.classification === 'cliente'
+  })
+  const effectiveLeads = allTickets.filter(t => {
+    const ov = reclassified[t.ticketId]
+    return ov ? ov === 'lead' : t.classification !== 'cliente'
+  })
+
   const avaliarTodos = useCallback(async () => {
-    if (!data?.clientes.length) return
+    if (!effectiveClientes.length) return
     setEvaluatingAll(true)
     const results: Record<string, string> = {}
-    for (const t of data.clientes) {
+    for (const t of effectiveClientes) {
       try {
         const res = await fetch('/api/avaliar-ai', {
           method: 'POST',
@@ -215,7 +268,7 @@ export default function AvaliacaoAtendimento() {
           body: JSON.stringify({
             ticketId: t.ticketId,
             contactName: t.contactName,
-            collaboratorName: selected,
+            collaboratorName: t._collaborator ?? selected,
           }),
         })
         const json = await res.json()
@@ -226,13 +279,14 @@ export default function AvaliacaoAtendimento() {
     }
     setAllEvals(results)
     setEvaluatingAll(false)
-  }, [data, selected])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveClientes, selected])
 
   const avaliarTodosLeads = useCallback(async () => {
-    if (!data?.leads.length) return
+    if (!effectiveLeads.length) return
     setEvaluatingAllLeads(true)
     const results: Record<string, string> = {}
-    for (const t of data.leads) {
+    for (const t of effectiveLeads) {
       try {
         const res = await fetch('/api/avaliar-ai', {
           method: 'POST',
@@ -240,7 +294,7 @@ export default function AvaliacaoAtendimento() {
           body: JSON.stringify({
             ticketId: t.ticketId,
             contactName: t.contactName,
-            collaboratorName: selected,
+            collaboratorName: t._collaborator ?? selected,
             type: 'lead',
           }),
         })
@@ -252,7 +306,8 @@ export default function AvaliacaoAtendimento() {
     }
     setAllLeadEvals(results)
     setEvaluatingAllLeads(false)
-  }, [data, selected])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLeads, selected])
 
   return (
     <div className="space-y-5">
@@ -330,13 +385,13 @@ export default function AvaliacaoAtendimento() {
           {/* Summary bar */}
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">
-              <span className="font-semibold text-gray-200">{data.clientes.length}</span> cliente{data.clientes.length !== 1 ? 's' : ''}
+              <span className="font-semibold text-gray-200">{effectiveClientes.length}</span> cliente{effectiveClientes.length !== 1 ? 's' : ''}
             </span>
             <span className="text-gray-600">·</span>
             <span className="text-gray-400">
-              <span className="font-semibold text-gray-200">{data.leads.length}</span> lead{data.leads.length !== 1 ? 's' : ''}
+              <span className="font-semibold text-gray-200">{effectiveLeads.length}</span> lead{effectiveLeads.length !== 1 ? 's' : ''}
             </span>
-            {data.clientes.length > 1 && (
+            {effectiveClientes.length > 1 && (
               <>
                 <span className="text-gray-600">·</span>
                 <button
@@ -351,7 +406,7 @@ export default function AvaliacaoAtendimento() {
                 </button>
               </>
             )}
-            {data.leads.length > 1 && (
+            {effectiveLeads.length > 1 && (
               <>
                 <span className="text-gray-600">·</span>
                 <button
@@ -368,34 +423,36 @@ export default function AvaliacaoAtendimento() {
             )}
           </div>
 
-          {data.clientes.length === 0 && data.leads.length === 0 && (
+          {effectiveClientes.length === 0 && effectiveLeads.length === 0 && (
             <div className="text-center py-12 text-gray-500 text-sm">
               Nenhum atendimento encontrado para {selected} em {dateFrom}{dateTo !== dateFrom ? ` – ${dateTo}` : ''}
             </div>
           )}
 
           {/* Clientes */}
-          {data.clientes.length > 0 && (
+          {effectiveClientes.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                 <UserCheck size={12} className="text-emerald-400" />
-                Clientes ({data.clientes.length})
+                Clientes ({effectiveClientes.length})
               </h3>
               <div className="space-y-2">
-                {data.clientes.map((t) => (
+                {effectiveClientes.map((t) => (
                   <TicketCard
                     key={t.ticketId}
                     ticket={t}
-                    collaboratorName={selected}
+                    collaboratorName={t._collaborator ?? selected}
                     isCliente
                     externalEvaluation={allEvals[t.ticketId]}
+                    onToggleClassification={() => toggleClassification(t.ticketId, true)}
+                    showCollaborator={selected === 'Todos'}
                   />
                 ))}
               </div>
               {/* Bulk evaluations */}
               {Object.keys(allEvals).length > 0 && (
                 <div className="mt-4 space-y-3">
-                  {data.clientes.map((t) =>
+                  {effectiveClientes.map((t) =>
                     allEvals[t.ticketId] ? (
                       <div key={t.ticketId} className="rounded-lg border border-brand-700/30 bg-gray-950/60 overflow-hidden">
                         <div className="px-4 py-2 bg-gray-900/60 flex items-center gap-2">
@@ -416,26 +473,28 @@ export default function AvaliacaoAtendimento() {
           )}
 
           {/* Leads */}
-          {data.leads.length > 0 && (
+          {effectiveLeads.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                 <UserX size={12} className="text-amber-400" />
-                Leads ({data.leads.length}) — avaliação pelo script da Geovana
+                Leads ({effectiveLeads.length}) — avaliação pelo script da Geovana
               </h3>
               <div className="space-y-2">
-                {data.leads.map((t) => (
+                {effectiveLeads.map((t) => (
                   <TicketCard
                     key={t.ticketId}
                     ticket={t}
-                    collaboratorName={selected}
+                    collaboratorName={t._collaborator ?? selected}
                     isCliente={false}
                     externalEvaluation={allLeadEvals[t.ticketId]}
+                    onToggleClassification={() => toggleClassification(t.ticketId, false)}
+                    showCollaborator={selected === 'Todos'}
                   />
                 ))}
               </div>
               {Object.keys(allLeadEvals).length > 0 && (
                 <div className="mt-4 space-y-3">
-                  {data.leads.map((t) =>
+                  {effectiveLeads.map((t) =>
                     allLeadEvals[t.ticketId] ? (
                       <div key={t.ticketId} className="rounded-lg border border-amber-700/30 bg-gray-950/60 overflow-hidden">
                         <div className="px-4 py-2 bg-gray-900/60 flex items-center gap-2">
